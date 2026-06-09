@@ -1,0 +1,12 @@
+# ---- M0/M1 (installed now) ----
+anthropic>=0.107        # Claude API — resume analysis, matching, message generation
+pdfplumber>=0.11         # PDF resume -> text
+python-dotenv>=1.0       # load .env
+
+# ---- M2 (installed) ----
+apify-client>=3.0         # scraping (LinkedIn/Wellfound/Naukri/Indeed)
+
+# ---- Later milestones (install when we reach them) ----
+# python-telegram-bot>=21 # M4  the swipe bot
+# google-api-python-client # M6  Gmail one-tap send
+# google-auth-oauthlib

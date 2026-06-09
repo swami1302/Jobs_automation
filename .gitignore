@@ -1,0 +1,14 @@
+# secrets
+.env
+
+# python
+.venv/
+__pycache__/
+*.pyc
+
+# generated data (keep the folders, ignore contents)
+data/db/*.db
+data/profile.json
+
+# os
+.DS_Store
