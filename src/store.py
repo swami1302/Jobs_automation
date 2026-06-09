@@ -131,6 +131,36 @@ def list_jobs(status: str | None = None, limit: int = 50) -> list[dict[str, Any]
         return [dict(r._mapping) for r in conn.execute(stmt)]
 
 
+def unscored_jobs(limit: int = 500) -> list[dict[str, Any]]:
+    """Pending jobs that haven't been scored yet (match_score IS NULL)."""
+    init_db()
+    stmt = (
+        select(jobs_table)
+        .where(jobs_table.c.status == "pending", jobs_table.c.match_score.is_(None))
+        .order_by(jobs_table.c.id)
+        .limit(limit)
+    )
+    with engine().connect() as conn:
+        return [dict(r._mapping) for r in conn.execute(stmt)]
+
+
+def top_matches(limit: int = 20, min_score: int = 0, status: str = "pending") -> list[dict[str, Any]]:
+    """Scored jobs ordered best-first — feeds the swipe bot (M4)."""
+    init_db()
+    stmt = (
+        select(jobs_table)
+        .where(
+            jobs_table.c.status == status,
+            jobs_table.c.match_score.is_not(None),
+            jobs_table.c.match_score >= min_score,
+        )
+        .order_by(jobs_table.c.match_score.desc())
+        .limit(limit)
+    )
+    with engine().connect() as conn:
+        return [dict(r._mapping) for r in conn.execute(stmt)]
+
+
 def set_status(job_id: int, status: str) -> None:
     with engine().begin() as conn:
         conn.execute(

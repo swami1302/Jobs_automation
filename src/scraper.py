@@ -7,6 +7,7 @@ raw items so we can inspect exact field names and tighten the mapping if needed.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from apify_client import ApifyClient
@@ -59,7 +60,7 @@ def _first(item: dict, *keys: str) -> str:
         if isinstance(v, dict):  # some actors nest, e.g. {"company": {"name": ...}}
             v = v.get("name") or v.get("title") or v.get("url")
         if v:
-            return str(v).strip()
+            return re.sub(r"\s+", " ", str(v)).strip()  # collapse newlines/tabs
     return ""
 
 
