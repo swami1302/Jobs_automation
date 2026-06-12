@@ -41,7 +41,7 @@ STATUS_LABELS = {
 }
 
 SETTINGS = [
-    ("JOB_SOURCES", "Portals (linkedin,indeed,naukri,wellfound)", "linkedin,indeed,naukri"),
+    ("JOB_SOURCES", "Portals (linkedin,indeed,naukri)", "linkedin,indeed,naukri"),
     ("JOB_TITLES", "Job titles (comma-sep)", ""),
     ("JOB_LOCATIONS", "Locations (comma-sep)", ""),
     ("EXPERIENCE_LEVELS", "Experience f_E (1 intern,2 entry,3 assoc,4 mid)", "2,3"),

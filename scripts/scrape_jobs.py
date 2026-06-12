@@ -4,7 +4,7 @@
 
 Portals run independently (one failing doesn't stop the others) and all feed the
 same DB, deduped across sources. Configure in .env:
-    JOB_SOURCES       comma-sep portals: linkedin,indeed,naukri,wellfound
+    JOB_SOURCES       comma-sep portals: linkedin,indeed,naukri
     JOB_TITLES        roles to search (comma-sep)
     JOB_LOCATIONS     locations incl. Remote (comma-sep)
     EXPERIENCE_LEVELS LinkedIn f_E codes (2,3 = entry/associate)

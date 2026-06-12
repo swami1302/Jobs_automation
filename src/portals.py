@@ -33,10 +33,6 @@ def _or_query(titles: list[str]) -> str:
     return " OR ".join(f'"{t}"' for t in clean_titles(titles))
 
 
-def _slug(t: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", _PAREN.sub("", t).lower()).strip("-")
-
-
 def _nearest(days: int, allowed: list[int]) -> int:
     return min(allowed, key=lambda x: abs(x - days))
 
@@ -92,20 +88,13 @@ def naukri_input(titles, locations, exp_codes, days, count) -> dict:
     }
 
 
-def wellfound_input(titles, locations, exp_codes, days, count) -> dict:
-    # Remote role pages (best fit for startups). Requires RESIDENTIAL proxy.
-    urls = [{"url": f"https://wellfound.com/role/r/{_slug(t)}"}
-            for t in clean_titles(titles)]
-    return {
-        "listingStartUrls": urls,
-        "scrapeJobDetails": False,
-        "proxy": {"useApifyProxy": True, "apifyProxyGroups": ["RESIDENTIAL"]},
-    }
+# NOTE: Wellfound was removed — its only viable Apify actor
+# (mscraper/wellfound-jobs-scraper) requires a RESIDENTIAL proxy, which is a paid
+# Apify feature and won't run on the free plan. Add it back here if that changes.
 
 
 PORTALS: dict[str, dict] = {
     "linkedin": {"actor": "curious_coder/linkedin-jobs-scraper", "build": linkedin_input},
     "indeed": {"actor": "misceres/indeed-scraper", "build": indeed_input},
     "naukri": {"actor": "nuclear_quietude/naukri-job-scraper", "build": naukri_input},
-    "wellfound": {"actor": "mscraper/wellfound-jobs-scraper", "build": wellfound_input},
 }

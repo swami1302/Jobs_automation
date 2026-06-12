@@ -1,16 +1,33 @@
-# ---- M0/M1 (installed now) ----
-anthropic>=0.107        # Claude API — resume analysis, matching, message generation
-pdfplumber>=0.11         # PDF resume -> text
-python-dotenv>=1.0       # load .env
+# Full runtime deps — `pip install -r requirements.txt` must bring up BOTH the
+# web panel and the Telegram bot (Render runs `python -m scripts.panel`, which
+# can auto-start the bot). Versions pinned to ">=" the currently-installed ones.
 
-# ---- M2 (installed) ----
-apify-client>=3.0         # scraping (LinkedIn/Wellfound/Naukri/Indeed)
+# ---- core / config ----
+python-dotenv>=1.2        # load .env
+pydantic>=2.11            # structured LLM output + profile schemas
+httpx>=0.28              # Hunter.io contact enrichment
 
-# ---- control panel ----
-textual>=8.0              # terminal UI (scripts/tui.py) — primary control panel
-flask>=3.0               # optional web control panel (scripts/panel.py)
+# ---- data store (SQLite local, Neon Postgres in prod) ----
+SQLAlchemy>=2.0
+psycopg[binary]>=3.2      # Postgres driver for DATABASE_URL (Neon)
 
-# ---- Later milestones (install when we reach them) ----
-# python-telegram-bot>=21 # M4  the swipe bot
-# google-api-python-client # M6  Gmail one-tap send
-# google-auth-oauthlib
+# ---- LLM providers (lazy-imported in src/llm.py; install what your
+#      LLM_PROVIDER_ORDER actually uses) ----
+openai>=1.50             # NVIDIA / Groq / any OpenAI-compatible endpoint
+google-genai>=1.0        # Gemini fallback
+# anthropic>=0.107        # only if you add `anthropic` to LLM_PROVIDER_ORDER
+
+# ---- scraping (M2) ----
+apify-client>=3.0         # LinkedIn / Indeed / Naukri actors
+
+# ---- resume parsing (M1, build_profile) ----
+pdfplumber>=0.11
+
+# ---- Telegram swipe bot (M4) ----
+python-telegram-bot>=22.0
+
+# ---- web control panel (M8 deploy target) + /health ----
+flask>=3.0
+
+# ---- terminal UI (local only; not needed on the server) ----
+textual>=8.0

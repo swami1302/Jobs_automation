@@ -1,0 +1,54 @@
+# Render Blueprint — one web service that runs the control panel AND, via
+# AUTOSTART_BOT, the Telegram bot in the same instance. Free plan fits one
+# always-on service (750 instance-hours/month ≈ 720h).
+#
+# Deploy:  push to GitHub → Render → New → Blueprint → pick this repo.
+# Then fill the `sync: false` secrets in the Render dashboard (NOT in git).
+#
+# Keep-alive: Render free spins a web service down after 15 min with no INBOUND
+# traffic. The bot's long-polling is OUTBOUND and does NOT reset that timer, so
+# point UptimeRobot (5-min interval) at  https://<your-app>.onrender.com/health
+services:
+  - type: web
+    name: job-swipe-bot
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # IMPORTANT: must be this exact command — autostart + the daily scheduler
+    # live in main(), which only runs under `python -m scripts.panel`
+    # (a gunicorn entrypoint would import the module and skip main()).
+    startCommand: python -m scripts.panel
+    healthCheckPath: /health
+    envVars:
+      # ---- behaviour flags (safe to keep in git) ----
+      - key: AUTOSTART_BOT          # launch the bot on boot (no UI to click)
+        value: "true"
+      - key: DAILY_CRON             # run scrape+match once a day
+        value: "true"
+      - key: CRON_HOUR              # local hour in CRON_TZ (24h)
+        value: "6"
+      - key: CRON_MINUTE
+        value: "0"
+      - key: CRON_TZ
+        value: "Asia/Kolkata"
+      - key: PYTHON_VERSION
+        value: "3.14.5"
+      # ---- secrets: set these in the Render dashboard, NOT here ----
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: DATABASE_URL           # your Neon Postgres URL
+        sync: false
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: APIFY_TOKEN
+        sync: false
+      - key: HUNTER_API_KEY
+        sync: false
+      - key: GMAIL_ADDRESS
+        sync: false
+      - key: GMAIL_APP_PASSWORD
+        sync: false
+      - key: RESUME_URL
+        sync: false

@@ -21,9 +21,23 @@ app = Flask(__name__)
 
 _STARTED = time.monotonic()  # for the /health uptime field
 
-# one shared state: the current one-shot action + its log, plus the bot process
-_state: dict = {"action": None, "log": "", "proc": None, "bot": None}
+# one shared state: the current one-shot action + its log, plus the bot process.
+# `bot_should_run` lets the watchdog respawn a crashed bot, while still honouring
+# an intentional ⏹ Stop (which clears the flag so the watchdog leaves it down).
+_state: dict = {"action": None, "log": "", "proc": None, "bot": None,
+                "bot_should_run": False}
 _lock = threading.Lock()
+
+
+def _truthy(v) -> bool:
+    return str(v or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _env_int(name: str, default: int) -> int:
+    """config.get default only applies to MISSING keys; a blank value ('') would
+    reach int() and crash. Treat blank-or-missing as the default."""
+    v = (config.get(name) or "").strip()
+    return int(v) if v else default
 
 ACTIONS = {
     "build_profile": "scripts.build_profile",
@@ -56,6 +70,13 @@ def _stream(name: str, module: str, extra: list[str]) -> None:
 def _bot_running() -> bool:
     bot = _state.get("bot")
     return bool(bot and bot.poll() is None)
+
+
+def _spawn_bot() -> subprocess.Popen:
+    """Launch the long-polling Telegram bot as a child process."""
+    return subprocess.Popen(
+        [sys.executable, "-m", "scripts.run_bot"], cwd=str(config.ROOT)
+    )
 
 
 PAGE = """
@@ -182,15 +203,14 @@ def action(name: str):
 def bot_start():
     if _bot_running():
         return jsonify(error="already running"), 409
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "scripts.run_bot"], cwd=str(config.ROOT)
-    )
-    _state["bot"] = proc
+    _state["bot_should_run"] = True
+    _state["bot"] = _spawn_bot()
     return jsonify(ok=True)
 
 
 @app.post("/bot/stop")
 def bot_stop():
+    _state["bot_should_run"] = False  # intentional stop — watchdog won't respawn
     bot = _state.get("bot")
     if bot and bot.poll() is None:
         bot.terminate()
@@ -202,7 +222,68 @@ def bot_stop():
     return jsonify(ok=True)
 
 
+def _bot_watchdog() -> None:
+    """Respawn the bot if it dies — keeps the deploy genuinely 24/7.
+
+    Honours an intentional ⏹ Stop via the `bot_should_run` flag, so it only
+    revives a *crashed* bot, never one the user deliberately stopped.
+    """
+    while True:
+        time.sleep(60)
+        if _state.get("bot_should_run") and not _bot_running():
+            print("[watchdog] bot not running — respawning")
+            _state["bot"] = _spawn_bot()
+
+
+def _run_daily() -> None:
+    """Fire the daily scrape+match, unless a manual action is already running."""
+    with _lock:
+        if _state["action"]:
+            print("[cron] skipped daily run — an action is already in progress")
+            return
+    _stream("daily", "scripts.daily", [])
+
+
+def _seconds_until(hour: int, minute: int, tz: str) -> float:
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    now = datetime.now(ZoneInfo(tz))
+    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    return (target - now).total_seconds()
+
+
+def _daily_loop(hour: int, minute: int, tz: str) -> None:
+    """Sleep until the next HH:MM in `tz`, run scrape+match, repeat daily."""
+    while True:
+        wait = _seconds_until(hour, minute, tz)
+        print(f"[cron] next daily scrape+match in {wait / 3600:.1f}h "
+              f"(at {hour:02d}:{minute:02d} {tz})")
+        time.sleep(wait)
+        _run_daily()
+        time.sleep(60)  # past the target minute so we don't double-fire
+
+
 def main() -> None:
+    # M7b: optional daily scrape+match scheduler (off by default; on via env).
+    if _truthy(config.get("DAILY_CRON")):
+        hour = _env_int("CRON_HOUR", 6)
+        minute = _env_int("CRON_MINUTE", 0)
+        tz = (config.get("CRON_TZ") or "").strip() or "Asia/Kolkata"
+        threading.Thread(target=_daily_loop, args=(hour, minute, tz),
+                         daemon=True).start()
+
+    # Option 1: auto-start the bot on boot (set AUTOSTART_BOT=true on Render,
+    # where there's no panel UI to click ▶️ Start Bot). The watchdog then keeps
+    # it alive across crashes.
+    if _truthy(config.get("AUTOSTART_BOT")):
+        _state["bot_should_run"] = True
+        _state["bot"] = _spawn_bot()
+        print("[boot] auto-started Telegram bot")
+    threading.Thread(target=_bot_watchdog, daemon=True).start()
+
     # Render (and most PaaS) inject $PORT — bind it if present, else local default.
     port = int(config.get("PORT") or config.get("PANEL_PORT", "8000"))
     print(f"Control panel: http://localhost:{port}  (Ctrl-C to stop)")
