@@ -252,20 +252,18 @@ async def _do_send(query, job_id: int) -> None:
             "Sending not configured. Add GMAIL_ADDRESS + GMAIL_APP_PASSWORD to .env."
         )
         return
-    resume = mailer.default_resume()
-    log.info("sending email for #%s to %s (resume=%s)", job_id, to, bool(resume))
+    has_resume = mailer.has_resume()
+    log.info("sending email for #%s to %s (resume=%s)", job_id, to, has_resume)
     try:
-        await asyncio.to_thread(
-            mailer.send_email, to, data["subject"], data["body"],
-            [resume] if resume else [],
-        )
+        # mailer resolves the attachment itself (local PDF or fetched RESUME_URL)
+        await asyncio.to_thread(mailer.send_email, to, data["subject"], data["body"])
     except Exception as e:  # noqa: BLE001
         log.exception("  send failed for #%s", job_id)
         await query.message.reply_text(f"Send failed: {str(e)[:160]}")
         return
     log.info("  email sent to %s", to)
     await query.edit_message_reply_markup(reply_markup=None)
-    attached = " with resume attached" if resume else ""
+    attached = " with resume attached" if has_resume else ""
     await query.message.reply_text(f"✅ Email sent to {to}{attached}.")
 
 

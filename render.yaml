@@ -48,7 +48,12 @@ services:
         sync: false
       - key: GMAIL_ADDRESS
         sync: false
-      - key: GMAIL_APP_PASSWORD
+      # SMTP is blocked on Render free — use Brevo (HTTP) for sending instead.
+      - key: BREVO_API_KEY
+        sync: false
+      - key: SENDER_EMAIL          # verified Brevo sender; defaults to GMAIL_ADDRESS
         sync: false
       - key: RESUME_URL
+        sync: false
+      - key: PROFILE_JSON          # contents of data/profile.json (gitignored)
         sync: false
