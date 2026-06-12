@@ -78,4 +78,15 @@ def save_profile(profile: Profile, path: Path | None = None) -> Path:
 
 def load_profile(path: Path | None = None) -> Profile:
     path = path or config.PROFILE_PATH
-    return Profile.model_validate_json(path.read_text())
+    if path.exists():
+        return Profile.model_validate_json(path.read_text())
+    # Deploy fallback: profile.json is gitignored (personal data) so it isn't on
+    # the server. Provide its contents via the PROFILE_JSON env var instead.
+    raw = config.get("PROFILE_JSON")
+    if raw:
+        return Profile.model_validate_json(raw)
+    raise FileNotFoundError(
+        f"No profile at {path} and PROFILE_JSON env var is unset. Run "
+        "`python -m scripts.build_profile` locally, then paste the contents of "
+        "data/profile.json into a PROFILE_JSON env var on your deploy."
+    )
