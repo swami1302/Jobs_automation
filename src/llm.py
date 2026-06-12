@@ -30,9 +30,36 @@ T = TypeVar("T", bound=BaseModel)
 _TRANSIENT = ("503", "429", "500", "502", "504", "unavailable", "overloaded",
               "high demand", "timeout", "timed out", "rate limit", "try again")
 
+# credit/quota exhaustion — the practical "low on credits" signal
+_CREDIT = ("credit", "quota", "insufficient", "exceeded", "402", "payment",
+           "billing", "out of", "free trial", "rent a paid")
+
+_WARNED: set = set()  # warn once per (provider, reason) per process — avoids spam
+
 
 def _is_transient(err: Exception) -> bool:
     return any(t in str(err).lower() for t in _TRANSIENT)
+
+
+def _reason(err: Exception) -> str:
+    s = str(err).lower()
+    if any(t in s for t in _CREDIT):
+        return "OUT OF CREDITS / QUOTA"
+    if "429" in s or "rate limit" in s:
+        return "rate-limited"
+    if "401" in s or "403" in s or "auth" in s:
+        return "bad/expired key"
+    return "error"
+
+
+def _warn_provider_down(name: str, err: Exception) -> None:
+    reason = _reason(err)
+    key = (name, reason)
+    if key in _WARNED:
+        return
+    _WARNED.add(key)
+    flag = "⚠️ " if reason == "OUT OF CREDITS / QUOTA" else "• "
+    print(f"{flag}provider '{name}' unavailable: {reason} — falling back to next provider")
 
 _JSON_FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 
@@ -163,6 +190,7 @@ def generate_structured(
                         print(f"      .. {name} transient ({msg}); retrying in 3s")
                     time.sleep(3)
                     continue
+                _warn_provider_down(name, e)  # always surface credit/quota/auth issues
                 if verbose:
                     print(f"      !! {name} failed: {msg}")
                 errors.append(f"{name}: {msg}")

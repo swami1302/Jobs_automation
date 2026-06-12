@@ -29,6 +29,9 @@ class Profile(BaseModel):
     email: str = ""
     phone: str = ""
     location: str = ""
+    portfolio: str = Field(default="", description="portfolio/website URL if present")
+    github: str = Field(default="", description="GitHub profile URL if present")
+    linkedin: str = Field(default="", description="LinkedIn profile URL if present")
     summary: str = Field(description="2-3 sentence professional summary")
     total_years_experience: float = Field(
         description="Best estimate of total years of professional experience"

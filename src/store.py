@@ -14,7 +14,7 @@ from typing import Any
 
 from sqlalchemy import (
     Column, DateTime, Integer, MetaData, String, Table, Text,
-    create_engine, func, insert, select, update,
+    case, create_engine, func, insert, select, update,
 )
 from sqlalchemy.exc import IntegrityError
 
@@ -161,11 +161,53 @@ def top_matches(limit: int = 20, min_score: int = 0, status: str = "pending") ->
         return [dict(r._mapping) for r in conn.execute(stmt)]
 
 
+def fit_pct(good: int = 70) -> dict[str, int]:
+    """Lightweight: how many scored jobs are strong fits (single aggregate query)."""
+    init_db()
+    g = func.sum(case((jobs_table.c.match_score >= good, 1), else_=0))
+    t = func.count(jobs_table.c.match_score)
+    with engine().connect() as conn:
+        row = conn.execute(select(g, t)).first()
+    good_n, total = (row[0] or 0), (row[1] or 0)
+    return {"good": int(good_n), "total": int(total),
+            "pct": round(int(good_n) / total * 100) if total else 0}
+
+
+def scored_jobs(limit: int = 1000) -> list[dict[str, Any]]:
+    """All jobs that have a match_score (any status) — for batch fit summary."""
+    init_db()
+    stmt = (
+        select(jobs_table)
+        .where(jobs_table.c.match_score.is_not(None))
+        .order_by(jobs_table.c.match_score.desc())
+        .limit(limit)
+    )
+    with engine().connect() as conn:
+        return [dict(r._mapping) for r in conn.execute(stmt)]
+
+
 def set_status(job_id: int, status: str) -> None:
     with engine().begin() as conn:
         conn.execute(
             update(jobs_table).where(jobs_table.c.id == job_id).values(status=status)
         )
+
+
+def set_contact(job_id: int, email: str, name: str = "") -> None:
+    with engine().begin() as conn:
+        conn.execute(
+            update(jobs_table)
+            .where(jobs_table.c.id == job_id)
+            .values(email=email, hiring_contact=name)
+        )
+
+
+def get_job(job_id: int) -> dict[str, Any] | None:
+    with engine().connect() as conn:
+        row = conn.execute(
+            select(jobs_table).where(jobs_table.c.id == job_id)
+        ).first()
+    return dict(row._mapping) if row else None
 
 
 def set_match(job_id: int, score: int, comment: str) -> None:

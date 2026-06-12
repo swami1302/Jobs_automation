@@ -82,3 +82,20 @@ def require(name: str) -> str:
 
 def get(name: str, default: str | None = None) -> str | None:
     return os.getenv(name, default)
+
+
+def set_env(name: str, value: str) -> None:
+    """Update (or append) KEY=value in .env and the live process environment."""
+    env_path = ROOT / ".env"
+    lines = env_path.read_text().splitlines() if env_path.exists() else []
+    out, found = [], False
+    for ln in lines:
+        if "=" in ln and ln.split("=", 1)[0] == name:
+            out.append(f"{name}={value}")
+            found = True
+        else:
+            out.append(ln)
+    if not found:
+        out.append(f"{name}={value}")
+    env_path.write_text("\n".join(out) + "\n")
+    os.environ[name] = value

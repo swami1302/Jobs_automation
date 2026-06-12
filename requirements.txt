@@ -6,6 +6,10 @@ python-dotenv>=1.0       # load .env
 # ---- M2 (installed) ----
 apify-client>=3.0         # scraping (LinkedIn/Wellfound/Naukri/Indeed)
 
+# ---- control panel ----
+textual>=8.0              # terminal UI (scripts/tui.py) — primary control panel
+flask>=3.0               # optional web control panel (scripts/panel.py)
+
 # ---- Later milestones (install when we reach them) ----
 # python-telegram-bot>=21 # M4  the swipe bot
 # google-api-python-client # M6  Gmail one-tap send

@@ -67,20 +67,24 @@ def _first(item: dict, *keys: str) -> str:
 def normalize_item(item: dict, source: str) -> Job:
     return Job(
         source=source,
-        title=_first(item, "title", "jobTitle", "position", "name"),
-        company=_first(item, "companyName", "company", "company_name", "organization"),
-        location=_first(item, "location", "jobLocation", "place", "formattedLocation"),
+        title=_first(item, "title", "jobTitle", "positionName", "position", "name",
+                     "job_title"),
+        company=_first(item, "companyName", "company", "company_name", "organization",
+                       "company_name_text"),
+        location=_first(item, "location", "jobLocation", "place", "formattedLocation",
+                        "city"),
         description=_first(
             item, "description", "descriptionText", "jobDescription",
-            "description_text", "snippet",
+            "description_text", "snippet", "job_description",
         ),
         apply_link=_first(
-            item, "jobUrl", "applyUrl", "applicationUrl", "link", "url", "jobPostingUrl",
+            item, "jobUrl", "applyUrl", "applicationUrl", "externalApplyLink",
+            "link", "url", "jobPostingUrl", "job_url",
         ),
         email=_first(item, "contactEmail", "email", "recruiterEmail"),
         posted=_first(
             item, "postedAt", "postedTime", "publishedAt", "listedAt",
-            "postedDate", "date",
+            "postedDate", "postingDateParsed", "date", "job_age",
         ),
         hiring_contact=_first(
             item, "hiringPerson", "posterFullName", "jobPosterName", "recruiterName",
