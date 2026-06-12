@@ -12,13 +12,66 @@ Hunter quota is plenty.
 from __future__ import annotations
 
 import json
+import logging
+import re
 from urllib.parse import quote_plus, urlparse
 
 import httpx
 
 from . import config
 
+log = logging.getLogger("contacts")
+
 _HR_HINTS = ("recruit", "talent", "hiring", "people", "hr", "human resource")
+
+# Email scan of the job description (free — saves a Hunter lookup when the JD
+# already lists a contact).
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_EMAIL_JUNK = (
+    "noreply", "no-reply", "donotreply", "do-not-reply", "example.",
+    "@sentry", "sentry.io", "wixpress", ".png", ".jpg", ".jpeg", ".gif", "@2x",
+)
+_RECRUIT_LOCAL = (
+    "recruit", "talent", "hiring", "hr@", "hr.", "career", "jobs@", "job@",
+    "apply", "people", "hello@", "careers",
+)
+
+
+def _scan_jd_email(job: dict) -> str | None:
+    """Find a usable contact email in the job description; prefer recruiting-ish
+    addresses. Returns None if the JD has no clean email."""
+    desc = job.get("description") or ""
+    fallback = None
+    for match in _EMAIL_RE.findall(desc):
+        low = match.lower()
+        if any(j in low for j in _EMAIL_JUNK):
+            continue
+        if any(h in low for h in _RECRUIT_LOCAL):
+            return match
+        fallback = fallback or match
+    return fallback
+
+
+def hunter_credits() -> int | None:
+    """Remaining Hunter search credits (available − used), or None if unknown.
+
+    Uses Hunter's /account endpoint, which does NOT consume search quota.
+    """
+    key = config.get("HUNTER_API_KEY")
+    if not key:
+        return None
+    try:
+        r = httpx.get("https://api.hunter.io/v2/account",
+                      params={"api_key": key}, timeout=15)
+        if r.status_code != 200:
+            return None
+        searches = ((r.json().get("data") or {}).get("requests") or {}).get("searches") or {}
+        used, available = searches.get("used"), searches.get("available")
+        if used is None or available is None:
+            return None
+        return max(0, available - used)
+    except Exception:
+        return None
 
 
 def company_domain(job: dict) -> str | None:
@@ -87,12 +140,33 @@ def enrich(job: dict) -> dict | None:
     Tries Hunter by domain (if known) else by company name; falls back to a
     generic careers@ guess when a domain is known but Hunter found nothing.
     """
+    # 1) Reuse a contact already on the job (a prior Apply, or one the scraper
+    #    captured) — zero API cost.
+    stored = (job.get("email") or "").strip()
+    if stored:
+        return {"email": stored, "name": job.get("hiring_contact") or "",
+                "position": "", "source": "stored"}
+
+    # 2) Scan the job description for an email — free, saves a Hunter credit.
+    jd_email = _scan_jd_email(job)
+    if jd_email:
+        return {"email": jd_email, "name": "", "position": "", "source": "jd"}
+
     domain = company_domain(job)
     company = job.get("company") or ""
 
-    hit = _hunter_search(domain=domain, company=company or None)
-    if hit and hit.get("email"):
-        return hit
+    # 3) Hunter — but only if credits remain (don't waste a call when exhausted).
+    credits = hunter_credits()
+    if credits is not None:
+        log.info("Hunter credits remaining: %s", credits)
+    if credits is None or credits > 0:
+        hit = _hunter_search(domain=domain, company=company or None)
+        if hit and hit.get("email"):
+            return hit
+    elif credits == 0:
+        log.info("skipping Hunter — no search credits left")
+
+    # 4) Last resort: a generic careers@ guess when we at least know the domain.
     if domain:
         return {"email": f"careers@{domain}", "name": "", "position": "",
                 "source": "guess"}

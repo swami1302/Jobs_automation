@@ -36,6 +36,24 @@ _CREDIT = ("credit", "quota", "insufficient", "exceeded", "402", "payment",
 
 _WARNED: set = set()  # warn once per (provider, reason) per process — avoids spam
 
+# in-process usage tally (free LLM tiers expose no credit-balance API, so the
+# honest thing we CAN report is our own call counts + which provider answered).
+_USAGE: dict = {"calls": 0, "by_provider": {}}
+
+
+def usage_summary() -> dict:
+    """Usage so far in THIS process + any provider flagged quota/rate-limited."""
+    flagged = sorted({
+        n for (n, r) in _WARNED
+        if r in ("OUT OF CREDITS / QUOTA", "rate-limited", "bad/expired key")
+    })
+    return {
+        "calls": _USAGE["calls"],
+        "by_provider": dict(_USAGE["by_provider"]),
+        "order": list(config.PROVIDER_ORDER),
+        "flagged": flagged,
+    }
+
 
 def _is_transient(err: Exception) -> bool:
     return any(t in str(err).lower() for t in _TRANSIENT)
@@ -180,6 +198,8 @@ def generate_structured(
                     suffix = f" (retry {attempt})" if attempt > 1 else ""
                     print(f"      -> trying {name} ({cfg['model']}){suffix} ...")
                 result = adapter(cfg, prompt, schema, system)
+                _USAGE["calls"] += 1
+                _USAGE["by_provider"][name] = _USAGE["by_provider"].get(name, 0) + 1
                 if verbose:
                     print(f"      <- {name} OK")
                 return result  # type: ignore[return-value]

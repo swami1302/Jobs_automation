@@ -27,7 +27,7 @@ from telegram.ext import (
     Application, CallbackQueryHandler, CommandHandler, ContextTypes,
 )
 
-from . import config, contacts, mailer, messages, models, store
+from . import config, contacts, llm, mailer, messages, models, store
 from .profile import Profile, load_profile
 
 log = logging.getLogger("bot")
@@ -177,11 +177,39 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _authorized(update):
         return
     c = store.counts()
-    await update.message.reply_text(
+    text = (
         "📊 Status counts:\n"
         + "\n".join(f"  {k}: {v}" for k, v in sorted(c.items()))
         + f"\n(showing matches ≥ {MIN_SCORE}%)"
     )
+    credits = await asyncio.to_thread(contacts.hunter_credits)
+    if credits is not None:
+        text += f"\n\n🔎 Hunter search credits left: {credits}"
+
+    u = llm.usage_summary()
+    if u["calls"]:
+        by = ", ".join(f"{k} {v}" for k, v in u["by_provider"].items())
+        text += f"\n🤖 LLM calls this run: {u['calls']} ({by})"
+    else:
+        text += f"\n🤖 LLM providers: {' → '.join(u['order'])}"
+    if u["flagged"]:
+        text += "\n⚠️ provider issue this run: " + ", ".join(u["flagged"])
+
+    await update.message.reply_text(text)
+
+
+async def _send_pre(chat, header: str, text: str) -> None:
+    """Send `text` inside <pre> blocks, split across messages to stay under
+    Telegram's 4096-char per-message limit. `header` (HTML) sits above chunk 1."""
+    e = html.escape
+    budget = 3000  # raw chars/chunk — leaves room for header + escaping growth
+    chunks = [text[i:i + budget] for i in range(0, len(text), budget)] or [""]
+    for idx, chunk in enumerate(chunks):
+        head = (header + "\n") if (idx == 0 and header) else ""
+        await chat.send_message(
+            f"{head}<pre>{e(chunk)}</pre>",
+            parse_mode=ParseMode.HTML, disable_web_page_preview=True,
+        )
 
 
 async def _draft_outreach(chat, job_id: int) -> None:
@@ -209,16 +237,23 @@ async def _draft_outreach(chat, job_id: int) -> None:
 
     e = html.escape
     li = contacts.linkedin_people_search(job.get("company", ""))
-    lines = []
+
+    await note.delete()
+
+    # Each block is its own message (chunked if long) so we never exceed
+    # Telegram's 4096-char per-message limit.
     if email:
         src = (contact or {}).get("source", "")
-        lines.append(f"👤 {e(name or 'Contact')} · ✉️ <code>{e(email)}</code> ({src})")
+        header = f"👤 {e(name or 'Contact')} · ✉️ <code>{e(email)}</code> ({src})"
     else:
-        lines.append("👤 No email found — use the apply link + LinkedIn search below.")
-    lines.append(f"\n📧 <b>COLD EMAIL</b>\nSubject: <code>{e(draft['subject'])}</code>")
-    lines.append(f"<pre>{e(draft['body'])}</pre>")
-    lines.append(f"💬 <b>LINKEDIN MESSAGE</b>\n<pre>{e(draft['linkedin'])}</pre>")
-    lines.append(f'🔎 <a href="{e(li)}">Find an HR / recruiter at {e(job.get("company") or "this company")} on LinkedIn ↗</a>')
+        header = "👤 No email found — use the apply link + LinkedIn search below."
+    await chat.send_message(header, parse_mode=ParseMode.HTML,
+                            disable_web_page_preview=True)
+
+    await _send_pre(
+        chat, f"📧 <b>COLD EMAIL</b>\nSubject: <code>{e(draft['subject'])}</code>",
+        draft["body"])
+    await _send_pre(chat, "💬 <b>LINKEDIN MESSAGE</b>", draft["linkedin"])
 
     buttons = []
     if email and mailer.can_send():
@@ -226,15 +261,15 @@ async def _draft_outreach(chat, job_id: int) -> None:
             "📧 Send email (with resume)", callback_data=f"send:{job_id}")])
     markup = InlineKeyboardMarkup(buttons) if buttons else None
 
-    await note.delete()
-    await chat.send_message(
-        "\n".join(lines), parse_mode=ParseMode.HTML,
-        reply_markup=markup, disable_web_page_preview=True,
-    )
+    link_line = (f'🔎 <a href="{e(li)}">Find an HR / recruiter at '
+                 f'{e(job.get("company") or "this company")} on LinkedIn ↗</a>')
+    await chat.send_message(link_line, parse_mode=ParseMode.HTML,
+                            reply_markup=markup, disable_web_page_preview=True)
+
     if email and not mailer.can_send():
         await chat.send_message(
-            "ℹ️ Add GMAIL_ADDRESS + GMAIL_APP_PASSWORD to .env to enable one-tap "
-            "send. For now, copy-paste the email above."
+            "ℹ️ Add email creds (Gmail App Password locally, or BREVO_API_KEY on "
+            "a deploy) to enable one-tap send. For now, copy-paste the email above."
         )
 
 
